@@ -5,70 +5,94 @@ import json
 
 from pyspark import SparkContext
 from pyspark.sql import SQLContext
+from pyspark.sql import HiveContext
 
+# Hive
+def creatHive(sc, tableName, schema):
+    sqlContext = HiveContext(sc)
+    sql = "CREATE TABLE IF NOT EXISTS " + tableName + " (" + schema + ")\""
+    sqlContext.sql(sql)
+    print("Creat hive table done.")
 
-def fileOutput(sc, itemList, filePath, fileType) :
-
+def creatHiveFromJson(sc, tableName, filePath):
     sqlContext = SQLContext(sc)
+    jsonDataFrame = sqlContext.jsonFile(filePath)
+    jsonDataFrame.registerAsTable(tableName)
+    print("Creat hive table from json file done.")
 
-    # JSON file
-    if fileType == 'json':
-        if itemList[0] == '*':
-            df = sqlContext.jsonFile(filePath)
+def loadHive(sc, tableName, filePath):
+    sqlContext = HiveContext(sc)
+    sql = "LOAD DATA LOCAL INPATH " + "\'" + filePath + "\' INTO TABLE " + tableName
+    sqlContext.sql(sql)
+    print("Load hive data done.")
 
-            # displays the content of the DataFrame to stdout
-            df.show()
+def selectHive(sc, tableName, items):
+    sqlContext = HiveContext(sc)
+    sql = "FROM " + tableName + " SELECT " + items
+    results = sqlContext.sql(sql).collect()
 
-        else:
-            df = sqlContext.load(filePath, "json")
+# JSON
+def selectJson(sc, itemList, filePath):
+    sqlContext = SQLContext(sc)
+    if itemList[0] == '*':
+        df = sqlContext.jsonFile(filePath)
 
-            # select Error Detect!
-            for item in itemList:
-                df.select(item).show()
-
-    # CSV file
-    elif fileType == 'csv':
-        # sc.textFile("file.csv")
-        #     .map(lambda line: line.split(","))
-        #     .filter(lambda line: len(line)<=1)
-        #     .collect()
-        pass
-
-    # Hive
-    elif fileType == 'hive':
-        pass
+        # displays the content of the DataFrame to stdout
+        df.show()
 
     else:
-        print("fileType Not Known.")
+        df = sqlContext.load(filePath, "json")
 
-def parse(sc):
-    # command: select * from * type *
-    if sys.argv[1] == 'select':
-        i = 2
-        itemList = []
-        while sys.argv[i] != 'from':
-            itemList.append(sys.argv[i])
-            i = i + 1
-            if i >= len(sys.argv):
-                print("Wrong Command!")
-                exit(-1)
+        df.select(itemList).show()
 
-        filePath = sys.argv[i+1]
-        if sys.argv[i+2] == 'type':
-            fileType = sys.argv[i+3]
+# CSV
+def selectCsv(sc, itemList, filePath):
+    # sc.textFile("file.csv")
+    #     .map(lambda line: line.split(","))
+    #     .filter(lambda line: len(line)<=1)
+    #     .collect()
+    pass
+
+
+def parseCommand(sc):
+
+    # CREATE LOAD SELECT  
+    var1 = sys.argv[2]
+    var2 = sys.argv[4]
+    fileType = sys.argv[6]        
+
+    if sys.argv[1] == 'create':
+        if fileType == 'hive':
+            creatHive(sc, var1, var2)
+        elif fileType == 'json':
+            pass
+        elif fileType == 'csv':
+            pass
         else:
-            print("Wrong Command!")
-            exit(-1)            
+            print("Create file type error.")
 
-        print(itemList)
-        print(filePath)
-        print(fileType)
+    elif sys.argv[1] == 'load':
+        if fileType == 'hive':
+            loadHive(sc, var1, var2)
+        elif fileType == 'json':
+            pass
+        elif fileType == 'csv':
+            pass
+        else:
+            print("Load file type error.")
 
-        fileOutput(sc, itemList, filePath, fileType)
+    elif sys.argv[1] == 'select':
+        if fileType == 'hive':
+            selectHive(sc, var1, var2)
+        elif fileType == 'json':
+            selectJson(sc, var1, var2)
+        elif fileType == 'csv':
+            selectCsv(sc, var1, var2)
+        else:
+            print("Select file type error.")
 
 
 if __name__ == "__main__":
-
     # if len(sys.argv) != 2:
     #     print("Usage: sort <file>", file=sys.stderr)
     #     exit(-1)
@@ -76,6 +100,6 @@ if __name__ == "__main__":
     # spark context
     sc = SparkContext(appName="framework")
 
-    parse(sc)
+    parseCommand(sc)
 
     sc.stop()
