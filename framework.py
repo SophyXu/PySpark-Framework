@@ -40,7 +40,7 @@ def selectJson(sc, columns, filePath):
         df = sqlContext.jsonFile(filePath)
 
         # displays the content of the DataFrame to stdout
-        df.printSchema()
+        df.show()
 
     else:
         df = sqlContext.load(filePath, "json")
@@ -48,12 +48,51 @@ def selectJson(sc, columns, filePath):
         df.select(columns).show()
 
 # CSV
+def printCsvSchema(csvList):
+    for i in range(len(csvList[0])):
+        str = '|--' + csvList[0][i]
+        print(str)
+
+def printCsv(csvList, columns):
+    printList = []
+
+    for i in range(len(csvList[0])):
+        for j in range(len(columns)):
+            if columns[j] == csvList[0][i]:
+                printList.append(i)
+                columns[j] = ""
+
+    # exception detect
+    errorCol = ""
+    flag = 0
+    for column in columns:
+        if column != "":
+            flag = 1
+            errorCol += column + " "
+    if flag == 1:
+        print("Error Column Input: " + errorCol)
+
+    # print csv
+    for i in range(len(csvList)):
+        str = ''
+        for index in printList:
+            str += csvList[i][int(index)] + ' '
+        print(str)
+
+# column: , no space
 def selectCsv(sc, columns, filePath):
     # sc.textFile("file.csv")
     #     .map(lambda line: line.split(","))
     #     .filter(lambda line: len(line)<=1)
     #     .collect()
-    pass
+    df = sc.textFile(filePath).map(lambda line: line.split(",")).collect()
+    printCsvSchema(df)
+    print(' ')
+    if columns == '*':
+        printCsv(df, df[0])
+    else:
+        printCsv(df, columns.split(","))
+        
 
 # Hive table processing
 def tableAvg(sc, tableName, Column):
