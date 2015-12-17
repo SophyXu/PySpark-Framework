@@ -3,17 +3,20 @@ __author__ = 'xxy'
 import sys
 import json
 
+from datetime import datetime, timedelta
+from operator import add
+
 from pyspark import SparkContext
 from pyspark.sql import SQLContext
 from pyspark.sql import HiveContext
+from pyspark.sql.types import *
 
 # Hive
 def creatHive(sc, tableName, schema):
     sqlContext = HiveContext(sc)
-    # sql = "CREATE TABLE IF NOT EXISTS " + tableName + " (" + schema + ")"
-    # print(sql)
-    sqlContext.sql("CREATE TABLE IF NOT EXISTS src (key INT, value STRING)")
-    # sqlContext.sql(sql)
+    sql = "CREATE TABLE IsF NOT EXISTS " + tableName + " (" + schema + ")"
+    print(sql)
+    sqlContext.sql(sql)
     print("Creat hive table done.")
 
 def creatHiveFromJson(sc, filePath, tableName):
@@ -47,6 +50,13 @@ def selectJson(sc, columns, filePath):
 
         df.select(columns).show()
 
+def loadJson(sc, filePath):
+    sqlCtx = SQLContext(sc)
+    df = sqlCtx.jsonFile(filePath)
+    rdd = df.rdd
+    rdd.map(lambda x : x[2]).collect()
+    # rdd.sortBy(lambda x: x[2]).map(lambda x: x[2]).mean()
+
 # CSV
 def printCsvSchema(csvList):
     for i in range(len(csvList[0])):
@@ -74,12 +84,12 @@ def printCsv(csvList, columns):
 
     # print csv
     for i in range(len(csvList)):
+        print("index " + i)
         str = ''
         for index in printList:
             str += csvList[i][int(index)] + ' '
         print(str)
 
-# column: , no space
 def selectCsv(sc, columns, filePath):
     # sc.textFile("file.csv")
     #     .map(lambda line: line.split(","))
@@ -93,6 +103,11 @@ def selectCsv(sc, columns, filePath):
     else:
         printCsv(df, columns.split(","))
         
+def loadCsv(sc, filePath, tableName):
+    schema = StructType([StructField("TRX_DAT", StringType(), False), StructField("TRX_TIM", StringType(), False), StructField("CLT_COD", StringType(), False), StructField("TRX_AMT", IntegerType(), False), StructField("CTY_NAM", StringType(), False)])
+    df = sc.textFile(filePath).map(lambda line: line.split(",")).collect()
+    rdd = sc.parallelize(df)
+    print(df)
 
 # Hive table processing
 def tableAvg(sc, tableName, Column):
@@ -135,27 +150,73 @@ def tableJoin(sc, tb1, tb2, joinExp = None, joinType = None):
 def percentile(x, y):
     count = len(x)
     if count * y == int(count * y):
-        l = count * y - 1
+        l = int(count * y) - 1
         r = l + 1
-        value = (x[l - 1] + x[r - 1]) * y
+        value = (x[l] + x[r]) * y
         return value
     else:
         l = int(count * y)
-        value = x[l - 1]
+        value = x[l]
         return value
 
 def tableMedian(sc, column, tableName):
-    pass
-    # sqlCtx = SQLContext(sc)
-    # df = sqlCtx.table(tableName)
-    # df.sort(asc(column)).select(column).map(lambda x: percentile(x, 0.5)).collect()
+    # pass
+    sqlCtx = SQLContext(sc)
+    df = sqlCtx.table(tableName)
+    df.sort(asc(column)).select(column).map(lambda x: percentile(x, 0.5)).collect()
 
 def tablePercentile(sc, column, percentile,tableName):
-    pass
-    # sqlCtx = SQLContext(sc)
-    # df = sqlCtx.table(tableName)
-    # df.sort(asc(column)).select(column).map(lambda x: np.percentile(x, percentile)).collect()
-   
+    # pass
+    sqlCtx = SQLContext(sc)
+    df = sqlCtx.table(tableName)
+    df.sort(asc(column)).select(column).map(lambda x: np.percentile(x, percentile)).collect()
+
+#########################
+def timeComp(trxDays):
+    now = datetime.now()
+    yesterday = now - timedelta(days=int(trxDays))
+    tmp1 = unicode(yesterday)
+    tmp2 = tmp1[0:4] + tmp1[5:7] + tmp1[8:11]
+    return int(tmp2)
+
+def median(x, y):
+    print(x, y)
+    if count * 0.5 == int(count * 0.5):
+        l = int(count * 0.5) - 1
+        r = l + 1
+        value = (x[l] + x[r]) * 0.5
+        return value
+    else:
+        l = int(count * 0.5)
+        value = x[l]
+        return value
+
+# rdd.sortBy(lambda x: x[2]).map(lambda x: x[2]).mean()
+
+# done
+def trxSingleAmountMean(rdd, startDate):
+    trxSingleSum = rdd.filter(lambda x: int(x[3][0:4]+x[3][5:7]+x[3][8:11]) > startDate).map(lambda x : x[2]).sum()
+
+# done
+def trxDayAmountMean(rdd, startDate, days):
+    trxDaySum = rdd.filter(lambda x: int(x[3][0:4]+x[3][5:7]+x[3][8:11]) > startDate).map(lambda x : (x[3],x[2])).reduceByKey(add).map(lambda x: x[1]).sum()
+    trxDayMean = trxDaySum / days
+
+def trxAmountMedian(rdd, startDate):
+    rdd.filter(lambda x: int(x[3][0:4]+x[3][5:7]+x[3][8:11]) > startDate).map(lambda x : x[2]).reduce(lambda x,y: median(x,y))
+
+# done
+def trxDayTradeMean(rdd, startDate, days):
+    trxDaySum = rdd.filter(lambda x: int(x[3][0:4]+x[3][5:7]+x[3][8:11]) > startDate).map(lambda x : (x[3],1)).reduceByKey(add).map(lambda x: x[1]).sum()
+    trxDayMean = trxDaySum / days
+
+def trxAmountSum(rdd, startDate):
+    rdd.filter(lambda x: int(x[3][0:4]+x[3][5:7]+x[3][8:11]) > startDate).map(lambda x : x[2]).sum()
+
+# done
+def trxTradeCount(rdd, startDate):
+    rdd.filter(lambda x: int(x[3][0:4]+x[3][5:7]+x[3][8:11]) > startDate).count()
+
 
 def parse(sc): 
     VAR1 = sys.argv[2]
@@ -163,7 +224,39 @@ def parse(sc):
     TYPE = sys.argv[6]        
 
     # create NAME from PATH/SHEMA type TYPE
-    if sys.argv[1] == 'create':
+    if sys.argv[6] == 'where':
+        trxAttri = sys.argv[2]
+        trxStat = sys.argv[3]
+        trxPath = sys.argv[5]
+        trxDays = sys.argv[7]
+
+        # json to rdd
+        sqlCtx = SQLContext(sc)
+        df = sqlCtx.jsonFile(trxPath)
+        rdd = df.rdd
+        
+        startDate = timeComp(trxDays)
+
+        if trxAttri == 'amount':
+            if trxStat == 'mean':
+                pass
+            elif trxStat == 'median':
+                # trxAmountMean(rdd, trxDays)
+                trxAmountMedian(rdd, startDate)
+                pass
+            else:
+                print("Transcation Attribute Wrong Type.")
+        elif trxAttri == 'trade':
+            if trxStat == 'mean':
+                pass
+            elif trxStat == 'median':
+                pass
+            else:
+                print("Transcation Attribute Wrong Type.")
+        else:
+            print("Transcation Statistics Wrong Type.")                 
+
+    elif sys.argv[1] == 'create':
         if TYPE == 'hive':
             creatHive(sc, VAR1, VAR2)
         elif TYPE == 'json':
