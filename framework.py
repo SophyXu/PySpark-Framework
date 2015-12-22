@@ -2,9 +2,9 @@ __author__ = 'xxy'
 
 import sys
 import json
+import numpy as np
 
 from datetime import datetime, timedelta
-from operator import add
 
 from pyspark import SparkContext
 from pyspark.sql import SQLContext
@@ -191,32 +191,56 @@ def median(x, y):
         value = x[l]
         return value
 
-# rdd.sortBy(lambda x: x[2]).map(lambda x: x[2]).mean()
+def trxTradeSession(rdd, startDate):
+    startTime = 0
+    endTime = 20000
 
-# done
-def trxSingleAmountMean(rdd, startDate):
-    trxSingleSum = rdd.filter(lambda x: int(x[3][0:4]+x[3][5:7]+x[3][8:11]) > startDate).map(lambda x : x[2]).sum()
+    maxTrade = [-1, -1, -1]
+    maxSession = [-1, -1, -1]
 
-# done
+    for i in range(12):
+        tmp = rdd.filter(lambda x: int(x[3][0:4] + x[3][5:7] + x[3][8:11]) > startDate).filter(lambda x: int(x[4][0:2] + x[4][3:5] + x[4][6:8]) >= startTime and int(x[4][0:2] + x[4][3:5] + x[4][6:8]) < endTime ).count()
+        if tmp > maxTrade[0]:
+            maxSession[2] = maxSession[1]
+            maxSession[1] = maxSession[0]
+            maxSession[0] = i
+            maxTrade[2] = maxTrade[1]
+            maxTrade[1] = maxTrade[0]
+            maxTrade[0] = tmp        
+        elif tmp > maxTrade[1]:
+            maxSession[2] = maxSession[1]
+            maxSession[1] = i
+            maxTrade[2] = maxTrade[1]
+            maxTrade[1] = tmp
+        elif tmp > maxTrade[2]:
+            maxSession[2] = i
+            maxTrade[2] = tmp
+
+        startTime += 20000
+        endTime += 20000
+    return maxSession 
+
 def trxDayAmountMean(rdd, startDate, days):
-    trxDaySum = rdd.filter(lambda x: int(x[3][0:4]+x[3][5:7]+x[3][8:11]) > startDate).map(lambda x : (x[3],x[2])).reduceByKey(add).map(lambda x: x[1]).sum()
+    trxDaySum = rdd.filter(lambda x: int(x[3][0:4]+x[3][5:7]+x[3][8:11]) > startDate).map(lambda x : (x[3], x[2])).reduceByKey(add).map(lambda x: x[1]).sum()
     trxDayMean = trxDaySum / days
+    print(trxDayMean)
+
+def trxDayTradeMean(rdd, startDate, days):
+    trxDaySum = rdd.filter(lambda x: int(x[3][0:4]+x[3][5:7]+x[3][8:11]) > startDate).map(lambda x : (x[3], 1)).reduceByKey(add).map(lambda x: x[1]).sum()
+    trxDayMean = trxDaySum / days
+    print(trxDayMean)
 
 def trxAmountMedian(rdd, startDate):
-    rdd.filter(lambda x: int(x[3][0:4]+x[3][5:7]+x[3][8:11]) > startDate).map(lambda x : x[2]).reduce(lambda x,y: median(x,y))
-
-# done
-def trxDayTradeMean(rdd, startDate, days):
-    trxDaySum = rdd.filter(lambda x: int(x[3][0:4]+x[3][5:7]+x[3][8:11]) > startDate).map(lambda x : (x[3],1)).reduceByKey(add).map(lambda x: x[1]).sum()
-    trxDayMean = trxDaySum / days
+    median = rdd.filter(lambda x: int(x[3][0:4]+x[3][5:7]+x[3][8:11]) > startDate).map(lambda x : ("m", x[2])).groupByKey().map(lambda x: np.median([i for i in x[1]])).collect()
+    print(median)
 
 def trxAmountSum(rdd, startDate):
-    rdd.filter(lambda x: int(x[3][0:4]+x[3][5:7]+x[3][8:11]) > startDate).map(lambda x : x[2]).sum()
+    trxSum = rdd.filter(lambda x: int(x[3][0:4]+x[3][5:7]+x[3][8:11]) > startDate).map(lambda x : x[2]).sum()
+    print(trxSum)
 
-# done
 def trxTradeCount(rdd, startDate):
-    rdd.filter(lambda x: int(x[3][0:4]+x[3][5:7]+x[3][8:11]) > startDate).count()
-
+    trxCount = rdd.filter(lambda x: int(x[3][0:4]+x[3][5:7]+x[3][8:11]) > startDate).count()
+    print(trxCount)
 
 def parse(sc): 
     VAR1 = sys.argv[2]
@@ -224,11 +248,10 @@ def parse(sc):
     TYPE = sys.argv[6]        
 
     # create NAME from PATH/SHEMA type TYPE
-    if sys.argv[6] == 'where':
+    if sys.argv[5] == 'where':
         trxAttri = sys.argv[2]
-        trxStat = sys.argv[3]
-        trxPath = sys.argv[5]
-        trxDays = sys.argv[7]
+        trxPath = sys.argv[4]
+        trxDays = sys.argv[6]
 
         # json to rdd
         sqlCtx = SQLContext(sc)
@@ -237,24 +260,27 @@ def parse(sc):
         
         startDate = timeComp(trxDays)
 
-        if trxAttri == 'amount':
-            if trxStat == 'mean':
+        if trxAttri == 'count':
+            trxTradeCount(rdd, startDate)
+        elif trxAttri == 'median':
+            trxAmountMedian(rdd, startDate)
+        elif trxAttri == 'sum':
+            trxAmountSum(rdd, startDate)
+        elif trxAttri == 'session':
+            trxTradeSession(rdd, startDate)
+        elif trxAttri == 'mean':
+            trxMeanType = sys.argv[7]
+            if trxMeanType == 'amount':
+                trxDayAmountMean(rdd, startDate, trxDays)
+            elif trxMeanType == 'single':
                 pass
-            elif trxStat == 'median':
-                # trxAmountMean(rdd, trxDays)
-                trxAmountMedian(rdd, startDate)
-                pass
+                # trxAmountSum / trxDays
+            elif trxMeanType == 'trade':
+                trxDayTradeMean(rdd, startDate, trxDays)
             else:
-                print("Transcation Attribute Wrong Type.")
-        elif trxAttri == 'trade':
-            if trxStat == 'mean':
-                pass
-            elif trxStat == 'median':
-                pass
-            else:
-                print("Transcation Attribute Wrong Type.")
+                print("Transcation Mean Type Wrong.")
         else:
-            print("Transcation Statistics Wrong Type.")                 
+            print("Transcation Attribute Wrong Type.")                 
 
     elif sys.argv[1] == 'create':
         if TYPE == 'hive':
